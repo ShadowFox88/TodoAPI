@@ -1,0 +1,33 @@
+services:
+  server:
+    container_name: "TodoAPI-Server"
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "$PORT:88"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+
+  postgres:
+    container_name: "TodoAPI-DB"
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=TodoAPI
+      - POSTGRES_PASSWORD=TodoAPI
+      - POSTGRES_DB=TodoAPI
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U TodoAPI"]
+      interval: 2s
+      timeout: 1s
+      retries: 5
+
+volumes:
+  pg_data:
