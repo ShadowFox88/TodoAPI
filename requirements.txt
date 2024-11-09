@@ -1,2 +1,5 @@
-fastapi
+fastapi[standard]
+pydantic
 asyncpg
+pyjwt[crypto]
+passlib

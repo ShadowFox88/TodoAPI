@@ -1,4 +1,4 @@
-FROM python:3.12.5:slim AS base
+FROM python:3.12.5-slim AS base
 
 # Set enviroment variables
 
@@ -12,7 +12,7 @@ WORKDIR /todoapi
 # Install dependencies
 COPY requirements.txt /todoapi/
 
-RUN pip install --upgrade -r /main/requirements.txt
+RUN pip install --upgrade -r /todoapi/requirements.txt
 
 # Copy project files
 COPY . /todoapi/
