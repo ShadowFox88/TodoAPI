@@ -15,7 +15,7 @@ class AppSettings():
     ALL_API_VERSIONS: List[str] = ["v1"]
     DEPRECATED_API_VERSIONS: List[str] = []
     
-    ALLOWED_HOSTS: List[str] = ["v1"]
+    ALLOWED_HOSTS: List[str] = []
     
     LOGGING_LEVEL: int = logging.INFO
     
