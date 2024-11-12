@@ -4,3 +4,5 @@ asyncpg
 pyjwt[crypto]
 passlib
 asyncpg
+bcrypt
+setuptools
