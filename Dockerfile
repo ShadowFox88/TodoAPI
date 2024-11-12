@@ -18,4 +18,4 @@ RUN pip install --upgrade -r /todoapi/requirements.txt
 COPY . /todoapi/
 
 # Run the application
-ENTRYPOINT [ "/todoapi/start-server.sh" ]
+CMD ["fastapi", "run", "/todoapi/server.py", "--port", "88"]

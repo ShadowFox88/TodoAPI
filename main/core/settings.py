@@ -12,6 +12,7 @@ class AppSettings():
     DEBUG: bool = False
     
     API_PREFIX: str = "api"
+    # Can't be changed by user
     ALL_API_VERSIONS: List[str] = ["v1"]
     DEPRECATED_API_VERSIONS: List[str] = []
     
@@ -19,9 +20,17 @@ class AppSettings():
     
     LOGGING_LEVEL: int = logging.INFO
     
-    DATABASE_URL: str = "TodoAPI-DB"
+    DATABASE_HOST: str = "TodoAPI-DB"
     DATABASE_PORT: int = 5432
+    DATABASE_USERNAME: str = "TodoAPI"
     DATABASE_PASSWORD: str | None = None
+    DATABASE_NAME: str = "TodoAPI"
+    
+    SECRET_KEY: str | None = None
+    # Can't be changed by user
+    ALGORITHM: str = "HS256"
+    AUTH_TOKEN_EXPIRATION: int = 3600 # This is in minutes
+    
     
     def __init__(self):
         """
@@ -36,6 +45,9 @@ class AppSettings():
         self.set_database_url()
         self.set_database_port()
         self.set_database_password()
+        
+        self.DATABASE_URL = f"postgresql+asyncpg://{self.DATABASE_USERNAME}:{self.DATABASE_PASSWORD}@{self.DATABASE_HOST}:{self.DATABASE_PORT}/{self.DATABASE_NAME}"
+
     
     def set_debug(self):
         env_debug = os.getenv("DEBUG")
@@ -127,3 +139,11 @@ class AppSettings():
             return
         
         self.DATABASE_PASSWORD = env_database_password
+        
+    def set_secret_key(self):
+        env_secret_key = os.getenv("SECRET_KEY")
+        
+        if env_secret_key is None:
+            raise ValueError("Secret key must be set. Generate one using \"openssl rand -hex 32\"")
+        
+        self.SECRET_KEY = env_secret_key

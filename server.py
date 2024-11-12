@@ -1,15 +1,54 @@
-from main.core.settings import AppSettings as settings
+from main.core.settings import AppSettings
 from fastapi.middleware.cors import CORSMiddleware
 from main.api.v1.router import router as main_api_router
-
 from fastapi import FastAPI
+from contextlib import asynccontextmanager
+from typing import Any, Dict
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlmodel import SQLModel
+from sqlalchemy.ext.asyncio.engine import AsyncEngine
 
-def create_app() -> FastAPI:
+
+settings = AppSettings()
+
+class CustomApp(FastAPI):
+    def __init__(self, *args: Any, **kwargs: Dict[str, Any]):
+        super().__init__(*args, **kwargs)
+        
+    @staticmethod
+    def return_engine() -> AsyncEngine:
+        engine = create_async_engine(
+            settings.DATABASE_URL,
+            echo=settings.DEBUG,
+        )
+        
+        return engine
+        
+    async def startup(self):
+        self.engine = self.return_engine()
+        
+        async with self.engine.begin() as conn:
+            await conn.run_sync(SQLModel.metadata.create_all)
+            
+    async def shutdown(self):
+        await self.engine.dispose()
+    
+
+@asynccontextmanager
+async def lifespan(app: CustomApp):
+    await app.startup()
+    
+    yield
+    
+    await app.shutdown()
+
+
+def create_app() -> CustomApp:
     """
     Creates the FastAPI application
     """
     
-    app: FastAPI = FastAPI()
+    app: CustomApp = CustomApp(lifespan=lifespan)
     
     app.add_middleware(
         CORSMiddleware,
