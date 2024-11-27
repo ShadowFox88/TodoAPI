@@ -1,12 +1,9 @@
-import base64
-import hashlib
 from datetime import datetime, timedelta
 from typing import Annotated, Any, Dict
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from passlib.hash import bcrypt
 from passlib import pwd
 from sqlalchemy.ext.asyncio.session import AsyncSession
 from sqlmodel import select
@@ -16,6 +13,9 @@ from main.core.schema.token import TokenBase, TokenCreate, Tokens
 from main.core.schema.user import UserCreate, UserRead, Users
 from main.core.settings import AppSettings
 
+from main.utils.user_authentication import hash_password, verify_password
+from main.utils.errors import invalid_token, unauthorised
+
 router = APIRouter()
 
 settings = AppSettings()
@@ -23,67 +23,43 @@ settings = AppSettings()
 get_bearer_token = HTTPBearer()
 
 
-async def get_current_user(
-    token: HTTPAuthorizationCredentials = Depends(get_bearer_token),
-    session: AsyncSession = Depends(get_session),
-) -> Users | None:
-    result = await session.execute(
-        select(Tokens).where(Tokens.token == token.credentials)
+async def get_logged_in_details(credentials: Annotated[HTTPAuthorizationCredentials, Depends(get_bearer_token)], session: AsyncSession = Depends(get_session)) -> Users | None:
+    result = await session.scalars(
+        select(Tokens).where(Tokens.token == credentials.credentials)
     )
+    token = result.first()
 
-    tokens = result.scalars().all()
+    if not token:
+        raise unauthorised
 
-    if not tokens:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    if len(tokens) > 1:
-        # This should never occur, and means I fucked up somewhere
-        exit()
-
-    authenticated_token = tokens[0] if tokens[0].token == token.credentials else None
-
+    authenticated_token = token if token.token == credentials.credentials else None
+    
     if authenticated_token is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise invalid_token
 
     if not authenticated_token.active:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token has been deactivated",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
+        raise invalid_token
+    
     if datetime.now() > authenticated_token.expires_at:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token has expired",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise invalid_token
 
-    result = await session.execute(
+
+    result = await session.scalars(
         select(Users).where(Users.id == authenticated_token.user_id)
     )
 
-    users = result.scalars().all()
+    users = result.all()
 
     authenticated_user = users[0] if users else None
 
-    return authenticated_user
+    return {
+        "User": authenticated_user,
+        "Token": authenticated_token}
 
 
 @router.get("/", response_model=UserRead)
-async def return_logged_in_user(
-    current_user: Annotated[Users, Depends(get_current_user)],
-):
-    return current_user
-
+async def return_logged_in_user(logged_in_details: Annotated[Users, Depends(get_logged_in_details)]):
+    return logged_in_details["User"]
 
 @router.post("/", response_model=UserRead)
 async def create_user(user: UserCreate, session: AsyncSession = Depends(get_session)):
@@ -93,10 +69,7 @@ async def create_user(user: UserCreate, session: AsyncSession = Depends(get_sess
             detail="Username must be less than 16 characters long.",
         )
 
-    password = user.password.encode("utf-8")
-    sha_password = base64.b64encode(hashlib.sha256(password).digest())
-
-    hashed_password = bcrypt.hash(sha_password)
+    hashed_password = hash_password(user.password)
 
     user_to_create = Users(username=user.username, hashed_password=hashed_password)
 
@@ -106,12 +79,10 @@ async def create_user(user: UserCreate, session: AsyncSession = Depends(get_sess
 
     return user_to_create
 
-
 @router.delete("/", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_user(
-    current_user: Annotated[Users, Depends(get_current_user)],
-    session: AsyncSession = Depends(get_session),
-):
+async def delete_user(logged_in_details: Annotated[Users, Depends(get_logged_in_details)], session: AsyncSession = Depends(get_session)):
+    current_user = logged_in_details["User"]
+    
     tokens = await session.execute(
         select(Tokens).where(Tokens.user_id == current_user.id)
     )
@@ -122,55 +93,29 @@ async def delete_user(
         i.active = False
         await session.delete(i)
 
-    await session.delete(current_user)
     await session.commit()
 
-
 @router.post("/token", response_model=TokenBase)
-async def generate_jwt_token(
-    token: TokenCreate, session: AsyncSession = Depends(get_session)
-):
-    result = await session.execute(
+async def generate_token(token: TokenCreate, session: AsyncSession = Depends(get_session)):
+    
+    result = await session.scalars(
         select(Users).where(Users.username == token.username)
     )
-    users = result.scalars().all()
-
-    if not users:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
+    user = result.first()
+    
     authenticated_user: Users | None = None
-
-    password = token.password.encode("utf-8")
-    sha_password = base64.b64encode(hashlib.sha256(password).digest())
-
-    for i in users:
-        if bcrypt.verify(sha_password, i.hashed_password):
-            authenticated_user = i
-            break
-
-    if authenticated_user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    data: Dict[str, Any] = {}
+    
+    if not user:
+        raise unauthorised
+    
+    if verify_password(token.password, user.hashed_password):
+        raise unauthorised
+    
+    authenticated_user = user
 
     expires = datetime.now() + timedelta(minutes=settings.AUTH_TOKEN_EXPIRATION)
-    token_data: Dict[str, Any] = {
-        "expires-at": expires.strftime("%Y/%m/%d %H:%M:%S"),
-        "token-type": "bearer",
-        "username": authenticated_user.username,
-        "random_data": str(pwd.genword(entropy=128)),
-    }
-    data.update(token_data)
 
-    encoded_token = jwt.encode(data, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    encoded_token = str(pwd.genword(entropy=512))
 
     created_token = Tokens(
         token=encoded_token,
@@ -184,12 +129,17 @@ async def generate_jwt_token(
     )
     tokens = tokens.scalars().all()
 
-    for i in tokens:
-        i.active = False
-        session.add(i)
-
     session.add(created_token)
     await session.commit()
     await session.refresh(created_token)
 
     return created_token
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(current_user: Annotated[Users, Depends(get_logged_in_details)], session: AsyncSession = Depends(get_session)):
+    current_token = current_user["Token"]
+    
+    current_token.active = False
+    session.add(current_token)
+
+    await session.commit()
