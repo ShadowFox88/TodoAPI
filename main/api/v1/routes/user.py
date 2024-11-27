@@ -1,13 +1,11 @@
 import base64
 import hashlib
-from datetime import datetime, timedelta, timezone
-from typing import Annotated, Any, Dict, List
+from datetime import datetime, timedelta
+from typing import Annotated, Any, Dict
 
 import jwt
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jwt.exceptions import InvalidTokenError
-from passlib.context import CryptContext
 from passlib.hash import bcrypt
 from passlib import pwd
 from sqlalchemy.ext.asyncio.session import AsyncSession
@@ -25,66 +23,70 @@ settings = AppSettings()
 get_bearer_token = HTTPBearer()
 
 
-async def get_current_user(token: HTTPAuthorizationCredentials = Depends(get_bearer_token), session: AsyncSession = Depends(get_session)) -> Users | None:
+async def get_current_user(
+    token: HTTPAuthorizationCredentials = Depends(get_bearer_token),
+    session: AsyncSession = Depends(get_session),
+) -> Users | None:
     result = await session.execute(
         select(Tokens).where(Tokens.token == token.credentials)
     )
-    
+
     tokens = result.scalars().all()
-    
+
     if not tokens:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     if len(tokens) > 1:
         # This should never occur, and means I fucked up somewhere
         exit()
-    
+
     authenticated_token = tokens[0] if tokens[0].token == token.credentials else None
-    
+
     if authenticated_token is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token",
             headers={"WWW-Authenticate": "Bearer"},
         )
-        
+
     if not authenticated_token.active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token has been deactivated",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     if datetime.now() > authenticated_token.expires_at:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token has expired",
             headers={"WWW-Authenticate": "Bearer"},
         )
-        
+
     result = await session.execute(
         select(Users).where(Users.id == authenticated_token.user_id)
     )
-    
+
     users = result.scalars().all()
-    
+
     authenticated_user = users[0] if users else None
-    
+
     return authenticated_user
-    
-    
+
+
 @router.get("/", response_model=UserRead)
-async def return_logged_in_user(current_user: Annotated[Users, Depends(get_current_user)]):
+async def return_logged_in_user(
+    current_user: Annotated[Users, Depends(get_current_user)],
+):
     return current_user
 
 
 @router.post("/", response_model=UserRead)
 async def create_user(user: UserCreate, session: AsyncSession = Depends(get_session)):
-
     if len(user.username) > 16:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -104,27 +106,30 @@ async def create_user(user: UserCreate, session: AsyncSession = Depends(get_sess
 
     return user_to_create
 
+
 @router.delete("/", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_user(current_user: Annotated[Users, Depends(get_current_user)], session: AsyncSession = Depends(get_session)):
-    
+async def delete_user(
+    current_user: Annotated[Users, Depends(get_current_user)],
+    session: AsyncSession = Depends(get_session),
+):
     tokens = await session.execute(
         select(Tokens).where(Tokens.user_id == current_user.id)
     )
-    
+
     tokens = tokens.scalars().all()
-    
+
     for i in tokens:
         i.active = False
         await session.delete(i)
-    
+
     await session.delete(current_user)
     await session.commit()
+
 
 @router.post("/token", response_model=TokenBase)
 async def generate_jwt_token(
     token: TokenCreate, session: AsyncSession = Depends(get_session)
 ):
-
     result = await session.execute(
         select(Users).where(Users.username == token.username)
     )
@@ -161,7 +166,7 @@ async def generate_jwt_token(
         "expires-at": expires.strftime("%Y/%m/%d %H:%M:%S"),
         "token-type": "bearer",
         "username": authenticated_user.username,
-        "random_data": str(pwd.genword(entropy=128)), # type: ignore
+        "random_data": str(pwd.genword(entropy=128)),
     }
     data.update(token_data)
 
