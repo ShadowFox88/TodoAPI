@@ -23,7 +23,10 @@ settings = AppSettings()
 get_bearer_token = HTTPBearer()
 
 
-async def get_logged_in_details(credentials: Annotated[HTTPAuthorizationCredentials, Depends(get_bearer_token)], session: AsyncSession = Depends(get_session)) -> Users | None:
+async def get_logged_in_details(
+    credentials: Annotated[HTTPAuthorizationCredentials, Depends(get_bearer_token)],
+    session: AsyncSession = Depends(get_session),
+) -> Users | None:
     result = await session.scalars(
         select(Tokens).where(Tokens.token == credentials.credentials)
     )
@@ -33,16 +36,15 @@ async def get_logged_in_details(credentials: Annotated[HTTPAuthorizationCredenti
         raise unauthorised
 
     authenticated_token = token if token.token == credentials.credentials else None
-    
+
     if authenticated_token is None:
         raise invalid_token
 
     if not authenticated_token.active:
         raise invalid_token
-    
+
     if datetime.now() > authenticated_token.expires_at:
         raise invalid_token
-
 
     result = await session.scalars(
         select(Users).where(Users.id == authenticated_token.user_id)
@@ -52,14 +54,15 @@ async def get_logged_in_details(credentials: Annotated[HTTPAuthorizationCredenti
 
     authenticated_user = users[0] if users else None
 
-    return {
-        "User": authenticated_user,
-        "Token": authenticated_token}
+    return {"User": authenticated_user, "Token": authenticated_token}
 
 
 @router.get("/", response_model=UserRead)
-async def return_logged_in_user(logged_in_details: Annotated[Users, Depends(get_logged_in_details)]):
+async def return_logged_in_user(
+    logged_in_details: Annotated[Users, Depends(get_logged_in_details)],
+):
     return logged_in_details["User"]
+
 
 @router.post("/", response_model=UserRead)
 async def create_user(user: UserCreate, session: AsyncSession = Depends(get_session)):
@@ -79,10 +82,14 @@ async def create_user(user: UserCreate, session: AsyncSession = Depends(get_sess
 
     return user_to_create
 
+
 @router.delete("/", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_user(logged_in_details: Annotated[Users, Depends(get_logged_in_details)], session: AsyncSession = Depends(get_session)):
+async def delete_user(
+    logged_in_details: Annotated[Users, Depends(get_logged_in_details)],
+    session: AsyncSession = Depends(get_session),
+):
     current_user = logged_in_details["User"]
-    
+
     tokens = await session.execute(
         select(Tokens).where(Tokens.user_id == current_user.id)
     )
@@ -95,22 +102,24 @@ async def delete_user(logged_in_details: Annotated[Users, Depends(get_logged_in_
 
     await session.commit()
 
+
 @router.post("/token", response_model=TokenBase)
-async def generate_token(token: TokenCreate, session: AsyncSession = Depends(get_session)):
-    
+async def generate_token(
+    token: TokenCreate, session: AsyncSession = Depends(get_session)
+):
     result = await session.scalars(
         select(Users).where(Users.username == token.username)
     )
     user = result.first()
-    
+
     authenticated_user: Users | None = None
-    
+
     if not user:
         raise unauthorised
-    
+
     if verify_password(token.password, user.hashed_password):
         raise unauthorised
-    
+
     authenticated_user = user
 
     expires = datetime.now() + timedelta(minutes=settings.AUTH_TOKEN_EXPIRATION)
@@ -135,10 +144,14 @@ async def generate_token(token: TokenCreate, session: AsyncSession = Depends(get
 
     return created_token
 
+
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-async def logout(current_user: Annotated[Users, Depends(get_logged_in_details)], session: AsyncSession = Depends(get_session)):
+async def logout(
+    current_user: Annotated[Users, Depends(get_logged_in_details)],
+    session: AsyncSession = Depends(get_session),
+):
     current_token = current_user["Token"]
-    
+
     current_token.active = False
     session.add(current_token)
 
