@@ -1,7 +1,6 @@
 from datetime import datetime, timedelta
-from typing import Annotated, Any, Dict
+from typing import Annotated
 
-import jwt
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from passlib import pwd
@@ -15,6 +14,7 @@ from main.core.settings import AppSettings
 
 from main.utils.user_authentication import hash_password, verify_password
 from main.utils.errors import invalid_token, unauthorised
+from sqlalchemy.exc import IntegrityError
 
 router = APIRouter()
 
@@ -24,7 +24,7 @@ get_bearer_token = HTTPBearer()
 
 
 async def get_logged_in_details(credentials: Annotated[HTTPAuthorizationCredentials, Depends(get_bearer_token)], session: AsyncSession = Depends(get_session)) -> Users | None:
-    result = await session.scalars(
+    result = await session.scalars( 
         select(Tokens).where(Tokens.token == credentials.credentials)
     )
     token = result.first()
@@ -73,9 +73,15 @@ async def create_user(user: UserCreate, session: AsyncSession = Depends(get_sess
 
     user_to_create = Users(username=user.username, hashed_password=hashed_password)
 
-    session.add(user_to_create)
-    await session.commit()
-    await session.refresh(user_to_create)
+    try:
+        session.add(user_to_create)
+        await session.commit()
+        await session.refresh(user_to_create)
+    except IntegrityError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username already exists.",
+        )
 
     return user_to_create
 
@@ -141,5 +147,18 @@ async def logout(current_user: Annotated[Users, Depends(get_logged_in_details)],
     
     current_token.active = False
     session.add(current_token)
+
+    await session.commit()
+
+@router.post("/logout/all", status_code=status.HTTP_204_NO_CONTENT)
+async def logout_all(current_user: Annotated[Users, Depends(get_logged_in_details)], session: AsyncSession = Depends(get_session)):    
+    tokens = await session.execute(
+        select(Tokens).where(Tokens.user_id == current_user["User"].id)
+    )
+    tokens = tokens.scalars().all()
+
+    for i in tokens:
+        i.active = False
+        session.add(i)
 
     await session.commit()
