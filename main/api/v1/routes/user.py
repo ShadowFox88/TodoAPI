@@ -1,20 +1,24 @@
-from datetime import datetime, timedelta
-from typing import Annotated
+"""Module containing the routes for the users API."""
+
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING, Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from passlib import pwd
-from sqlalchemy.ext.asyncio.session import AsyncSession
-from sqlmodel import select
-
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from main.core.database import get_session
 from main.core.schema.token import TokenBase, TokenCreate, Tokens
 from main.core.schema.user import UserCreate, UserRead, Users
 from main.core.settings import AppSettings
-
-from main.utils.user_authentication import hash_password, verify_password
 from main.utils.errors import invalid_token, unauthorised
+from main.utils.user_authentication import hash_password, verify_password
+from passlib import pwd
 from sqlalchemy.exc import IntegrityError
+from sqlmodel import select
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio.session import AsyncSession
 
 router = APIRouter()
 
@@ -23,9 +27,17 @@ settings = AppSettings()
 get_bearer_token = HTTPBearer()
 
 
-async def get_logged_in_details(credentials: Annotated[HTTPAuthorizationCredentials, Depends(get_bearer_token)], session: AsyncSession = Depends(get_session)) -> Users | None:
-    result = await session.scalars( 
-        select(Tokens).where(Tokens.token == credentials.credentials)
+async def get_logged_in_details(
+    credentials: Annotated[HTTPAuthorizationCredentials, Depends(get_bearer_token)],
+    session: AsyncSession = None,
+) -> Users | None:
+    """
+    Return the logged in user and their token.
+    """
+    if session is None:
+        session = Depends(get_session)
+    result = await session.scalars(
+        select(Tokens).where(Tokens.token == credentials.credentials),
     )
     token = result.first()
 
@@ -33,40 +45,48 @@ async def get_logged_in_details(credentials: Annotated[HTTPAuthorizationCredenti
         raise unauthorised
 
     authenticated_token = token if token.token == credentials.credentials else None
-    
+
     if authenticated_token is None:
         raise invalid_token
 
     if not authenticated_token.active:
         raise invalid_token
-    
-    if datetime.now() > authenticated_token.expires_at:
+
+    if datetime.now(tz=timezone.utc) > authenticated_token.expires_at:
         raise invalid_token
 
-
     result = await session.scalars(
-        select(Users).where(Users.id == authenticated_token.user_id)
+        select(Users).where(Users.id == authenticated_token.user_id),
     )
 
     users = result.all()
 
     authenticated_user = users[0] if users else None
 
-    return {
-        "User": authenticated_user,
-        "Token": authenticated_token}
+    return {"User": authenticated_user, "Token": authenticated_token}
 
 
 @router.get("/", response_model=UserRead)
-async def return_logged_in_user(logged_in_details: Annotated[Users, Depends(get_logged_in_details)]):
+async def return_logged_in_user(
+    logged_in_details: Annotated[Users, Depends(get_logged_in_details)],
+) -> UserRead:
+    """
+    Return the logged in user.
+    """
     return logged_in_details["User"]
 
+
 @router.post("/", response_model=UserRead)
-async def create_user(user: UserCreate, session: AsyncSession = Depends(get_session)):
-    if len(user.username) > 16:
+async def create_user(
+    user: UserCreate, session: Annotated[AsyncSession, Depends(get_session)]
+) -> UserRead:
+    """
+    Create a user.
+    """
+    if len(user.username) > settings.USERNAME_MAX_LENGTH:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username must be less than 16 characters long.",
+            detail="Username must be less than {settings.USERNAME_MAX_LENGTH} characters long.", # noqa: E501
         )
 
     hashed_password = hash_password(user.password)
@@ -81,16 +101,23 @@ async def create_user(user: UserCreate, session: AsyncSession = Depends(get_sess
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Username already exists.",
-        )
+        ) from None
 
     return user_to_create
 
+
 @router.delete("/", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_user(logged_in_details: Annotated[Users, Depends(get_logged_in_details)], session: AsyncSession = Depends(get_session)):
+async def delete_user(
+    logged_in_details: Annotated[Users, Depends(get_logged_in_details)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    """
+    Delete the logged in user.
+    """
     current_user = logged_in_details["User"]
-    
+
     tokens = await session.execute(
-        select(Tokens).where(Tokens.user_id == current_user.id)
+        select(Tokens).where(Tokens.user_id == current_user.id),
     )
 
     tokens = tokens.scalars().all()
@@ -101,37 +128,44 @@ async def delete_user(logged_in_details: Annotated[Users, Depends(get_logged_in_
 
     await session.commit()
 
+
 @router.post("/token", response_model=TokenBase)
-async def generate_token(token: TokenCreate, session: AsyncSession = Depends(get_session)):
-    
+async def generate_token(
+    token: TokenCreate, session: Annotated[AsyncSession, Depends(get_session)]
+) -> TokenBase:
+    """
+    Generate a new token for the logged in user.
+    """
     result = await session.scalars(
-        select(Users).where(Users.username == token.username)
+        select(Users).where(Users.username == token.username),
     )
     user = result.first()
-    
+
     authenticated_user: Users | None = None
-    
+
     if not user:
         raise unauthorised
-    
+
     if verify_password(token.password, user.hashed_password):
         raise unauthorised
-    
+
     authenticated_user = user
 
-    expires = datetime.now() + timedelta(minutes=settings.AUTH_TOKEN_EXPIRATION)
+    expires = datetime.now(tz=timezone.utc) + timedelta(
+        minutes=settings.AUTH_TOKEN_EXPIRATION
+    )
 
     encoded_token = str(pwd.genword(entropy=512))
 
     created_token = Tokens(
         token=encoded_token,
-        token_type="bearer",
+        token_type="bearer",  # noqa: S106
         expires_at=expires,
         user_id=authenticated_user.id,
     )
 
     tokens = await session.execute(
-        select(Tokens).where(Tokens.user_id == authenticated_user.id)
+        select(Tokens).where(Tokens.user_id == authenticated_user.id),
     )
     tokens = tokens.scalars().all()
 
@@ -141,19 +175,37 @@ async def generate_token(token: TokenCreate, session: AsyncSession = Depends(get
 
     return created_token
 
+
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-async def logout(current_user: Annotated[Users, Depends(get_logged_in_details)], session: AsyncSession = Depends(get_session)):
+async def logout(
+    current_user: Annotated[Users, Depends(get_logged_in_details)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    """
+    Logout the logged in user.
+
+    This will invalidate the current token.
+    """
     current_token = current_user["Token"]
-    
+
     current_token.active = False
     session.add(current_token)
 
     await session.commit()
 
+
 @router.post("/logout/all", status_code=status.HTTP_204_NO_CONTENT)
-async def logout_all(current_user: Annotated[Users, Depends(get_logged_in_details)], session: AsyncSession = Depends(get_session)):    
+async def logout_all(
+    current_user: Annotated[Users, Depends(get_logged_in_details)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    """
+    Logout the logged in user from all devices.
+
+    This invalidates all the user's tokens.
+    """
     tokens = await session.execute(
-        select(Tokens).where(Tokens.user_id == current_user["User"].id)
+        select(Tokens).where(Tokens.user_id == current_user["User"].id),
     )
     tokens = tokens.scalars().all()
 

@@ -1,3 +1,5 @@
+"""Utils for handling errors in the application."""
+
 from fastapi import HTTPException, status
 
 unauthorised = HTTPException(
