@@ -30,6 +30,14 @@ services:
       retries: 5
     env_file:
       - .env
+  redis:
+    container_name: "TodoAPI-Redis"
+    image: redis:7.4-alpine
+    restart: always
+    command: redis-server --save 20 1 --loglevel warning --requirepass q2sewFemD4BRynbCXLfbG88q06SuAwKL # since the redis container isn't exposed, this should be fine. change anyways for better security
+    volumes: 
+      - redis_data:/data
 
 volumes:
   pg_data:
+  redis_data:

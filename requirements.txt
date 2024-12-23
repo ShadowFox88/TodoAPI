@@ -6,3 +6,4 @@ passlib
 asyncpg
 bcrypt
 setuptools
+redis[hiredis]>=4.2.0rc1

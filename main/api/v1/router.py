@@ -1,7 +1,6 @@
 from fastapi import APIRouter
 
-from main.api.v1.routes import user
-from main.api.v1.routes import todo
+from main.api.v1.routes import todo, user
 
 router: APIRouter = APIRouter()
 

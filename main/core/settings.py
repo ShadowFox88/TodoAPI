@@ -1,22 +1,23 @@
+from __future__ import annotations
+
 import json
 import logging
 import os
-from typing import List
 
 
 class AppSettings:
     """
-    The class that contains the application settings. Will take settings from environment variables, else revert to a default set
-    """
+    The class that contains the application settings. Will take settings from environment variables, else revert to a default set.
+    """  # noqa: E501
 
     DEBUG: bool = False
 
     API_PREFIX: str = "api"
     # Can't be changed by user
-    ALL_API_VERSIONS: List[str] = ["v1"]
-    DEPRECATED_API_VERSIONS: List[str] = []
+    ALL_API_VERSIONS: list[str] = ["v1"]
+    DEPRECATED_API_VERSIONS: list[str] = []
 
-    ALLOWED_HOSTS: List[str] = []
+    ALLOWED_HOSTS: list[str] = []
 
     LOGGING_LEVEL: int = logging.INFO
 
@@ -31,11 +32,14 @@ class AppSettings:
     ALGORITHM: str = "HS256"
     AUTH_TOKEN_EXPIRATION: int = 3600  # This is in minutes
 
+    GLOBAL_RATELIMIT_INTERVAL: int = 60
+    GLOBAL_RATELIMIT_LIMIT: int = 1
+    REDIS_PASSWORD: str | None = None
+
     def __init__(self):
         """
-        Calls all the functions to verify the settings exist, and are of the proper type and expected value
+        Calls all the functions to verify the settings exist, and are of the proper type and expected value.
         """
-
         self.set_debug()
         self.set_api_prefix()
         self.set_deprecated_apis()
@@ -45,8 +49,10 @@ class AppSettings:
         self.set_database_port()
         self.set_database_password()
         self.set_secret_key()
+        self.set_redis_password()
 
         self.DATABASE_URL = f"postgresql+asyncpg://{self.DATABASE_USERNAME}:{self.DATABASE_PASSWORD}@{self.DATABASE_HOST}:{self.DATABASE_PORT}/{self.DATABASE_NAME}"
+        self.REDIS_URL = f"redis://:{self.REDIS_PASSWORD}@TodoAPI-Redis:6379/0"
 
     def set_debug(self):
         env_debug = os.getenv("DEBUG")
@@ -134,8 +140,7 @@ class AppSettings:
         if env_database_port.isnumeric():
             self.DATABASE_PORT = int(env_database_port)
             return
-        else:
-            raise ValueError("Database port must be a number")
+        raise ValueError("Database port must be a number")
 
     def set_database_password(self):
         env_database_password = os.getenv("DATABASE_PASSWORD")
@@ -154,3 +159,13 @@ class AppSettings:
             )
 
         self.SECRET_KEY = env_secret_key
+
+    def set_redis_password(self):
+        redis_password = os.getenv("REDIS_PASSWORD")
+
+        if redis_password is None:
+            raise ValueError(
+                'Secret key must be set. Generate one using "openssl rand -hex 32"'
+            )
+
+        self.REDIS_PASSWORD = redis_password
