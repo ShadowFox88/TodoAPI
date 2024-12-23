@@ -1,3 +1,4 @@
+import datetime
 import time
 
 import redis.asyncio as redis
@@ -6,7 +7,6 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
 from main.core.settings import AppSettings
-import datetime
 
 settings = AppSettings()
 
@@ -62,6 +62,7 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
                     + datetime.timedelta(seconds=retry_after)),
                     "X-Ratelimit-Remaining": str(self.limit - requests),
                     "X-Ratelimit": str(self.limit),
+                    "X-Ratelimit-Interval": str(self.interval),
                 },
             )
 
@@ -70,6 +71,7 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         response.headers["X-Ratelimit-Remaining"] = str(self.limit - (requests + 1))
         response.headers["X-Ratelimit"] = str(self.limit)
+        response.headers["X-Ratelimit-Interval"] = str(self.interval)
         await self.redis.aclose()
 
         return response

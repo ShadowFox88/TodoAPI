@@ -33,7 +33,7 @@ class AppSettings:
     AUTH_TOKEN_EXPIRATION: int = 3600  # This is in minutes
 
     GLOBAL_RATELIMIT_INTERVAL: int = 60
-    GLOBAL_RATELIMIT_LIMIT: int = 1
+    GLOBAL_RATELIMIT_LIMIT: int = 100
     REDIS_PASSWORD: str | None = None
 
     def __init__(self):
