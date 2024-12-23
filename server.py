@@ -1,49 +1,44 @@
-"""Main file to start the application."""
-
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, Dict
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from main.api.v1.router import router as main_api_router
-from main.core.settings import AppSettings
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.ext.asyncio.engine import AsyncEngine
 from sqlmodel import SQLModel
 from slowapi import Limiter, _rate_limit_exceeded_handler
 
+from main.api.v1.router import router as main_api_router
+from main.core.settings import AppSettings
+
 settings = AppSettings()
 
 
 class CustomApp(FastAPI):
-    """
-    Custom FastAPI application class.
-
-    This class is used to create the FastAPI application with a couple of useful functions.
-    """ # noqa: E501
-
-    def __init__(self, *args: any, **kwargs: dict[str, Any]) -> None:  # noqa: D107
+    def __init__(self, *args: Any, **kwargs: Dict[str, Any]):
         super().__init__(*args, **kwargs)
 
     @staticmethod
-    def return_engine() -> AsyncEngine:  # noqa: D102
-        return create_async_engine(
+    def return_engine() -> AsyncEngine:
+        engine = create_async_engine(
             settings.DATABASE_URL,
             echo=settings.DEBUG,
         )
 
-    async def startup(self) -> None:  # noqa: D102
+        return engine
+
+    async def startup(self):
         self.engine = self.return_engine()
 
         async with self.engine.begin() as conn:
             await conn.run_sync(SQLModel.metadata.create_all)
 
-    async def shutdown(self) -> None:  # noqa: D102
+    async def shutdown(self):
         await self.engine.dispose()
 
 
 @asynccontextmanager
-async def lifespan(app: CustomApp) -> None:  # noqa: D103
+async def lifespan(app: CustomApp):
     await app.startup()
 
     yield
@@ -52,7 +47,10 @@ async def lifespan(app: CustomApp) -> None:  # noqa: D103
 
 
 def create_app() -> CustomApp:
-    """Create the FastAPI application."""
+    """
+    Creates the FastAPI application
+    """
+
     app: CustomApp = CustomApp(lifespan=lifespan)
 
     app.add_middleware(

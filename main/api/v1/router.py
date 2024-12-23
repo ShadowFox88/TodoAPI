@@ -1,12 +1,7 @@
-"""
-Import all the routes for the branches of the api.
-
-API version 1.
-"""
-
 from fastapi import APIRouter
 
-from main.api.v1.routes import todo, user
+from main.api.v1.routes import user
+from main.api.v1.routes import todo
 
 router: APIRouter = APIRouter()
 

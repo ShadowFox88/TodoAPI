@@ -6,4 +6,3 @@ passlib
 asyncpg
 bcrypt
 setuptools
-slowapi

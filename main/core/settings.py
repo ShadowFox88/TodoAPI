@@ -1,29 +1,22 @@
-"""Define the settings for the application."""
-
-from __future__ import annotations
-
 import json
 import logging
 import os
-from typing import ClassVar
+from typing import List
 
 
 class AppSettings:
     """
-    The class that contains the application settings.
-
-    Will take settings from environment variables, otherwise reverts to a default set of
-    values if applicable.
+    The class that contains the application settings. Will take settings from environment variables, else revert to a default set
     """
 
     DEBUG: bool = False
 
     API_PREFIX: str = "api"
     # Can't be changed by user
-    ALL_API_VERSIONS: ClassVar[list[str]] = ["v1"]
-    DEPRECATED_API_VERSIONS: ClassVar[list[str]] = []
+    ALL_API_VERSIONS: List[str] = ["v1"]
+    DEPRECATED_API_VERSIONS: List[str] = []
 
-    ALLOWED_HOSTS: ClassVar[list[str]] = []
+    ALLOWED_HOSTS: List[str] = []
 
     LOGGING_LEVEL: int = logging.INFO
 
@@ -38,15 +31,11 @@ class AppSettings:
     ALGORITHM: str = "HS256"
     AUTH_TOKEN_EXPIRATION: int = 3600  # This is in minutes
 
-    USERNAME_MAX_LENGTH: int = 32
-
-    def __init__(self) -> None:
+    def __init__(self):
         """
-        Initialize the settings.
-
-        Calls all the functions to verify the settings exist, and are of the proper type
-        and of the expected values
+        Calls all the functions to verify the settings exist, and are of the proper type and expected value
         """
+
         self.set_debug()
         self.set_api_prefix()
         self.set_deprecated_apis()
@@ -59,10 +48,7 @@ class AppSettings:
 
         self.DATABASE_URL = f"postgresql+asyncpg://{self.DATABASE_USERNAME}:{self.DATABASE_PASSWORD}@{self.DATABASE_HOST}:{self.DATABASE_PORT}/{self.DATABASE_NAME}"
 
-    def set_debug(self) -> None:
-        """
-        Set the debug flag.
-        """
+    def set_debug(self):
         env_debug = os.getenv("DEBUG")
 
         if env_debug is None:
@@ -72,10 +58,7 @@ class AppSettings:
             self.DEBUG = env_debug.lower() == "true"
             return
 
-    def set_api_prefix(self) -> None:
-        """
-        Set the API prefix.
-        """
+    def set_api_prefix(self):
         env_api_prefix = os.getenv("API_PREFIX")
 
         if env_api_prefix is None:
@@ -86,10 +69,7 @@ class AppSettings:
 
         self.API_PREFIX = env_api_prefix
 
-    def set_deprecated_apis(self) -> None:
-        """
-        Set the deprecated APIs.
-        """
+    def set_deprecated_apis(self):
         deprecated_apis = json.loads(os.getenv("DEPRECATED_APIS", "[]"))
 
         if deprecated_apis is None:
@@ -97,43 +77,31 @@ class AppSettings:
 
         for i in deprecated_apis:
             if not isinstance(i, str):
-                error_message = "Deprecated APIs must be a list of strings"
-                raise TypeError(error_message)
+                raise ValueError("Deprecated APIs must be a list of strings")
             if not i.startswith("v"):
-                error_message = "Deprecated APIs must refer to a version"
-                raise ValueError(error_message)
+                raise ValueError("Deprecated APIs must refer to a version")
             if i not in self.ALL_API_VERSIONS:
-                error_message = "Deprecated APIs must refer to a valid version"
-                raise ValueError(error_message)
+                raise ValueError("Deprecated APIs must refer to a valid version")
 
         if len(deprecated_apis) == len(self.ALL_API_VERSIONS):
-            error_message = "Cannot deprecate all API versions"
-            raise ValueError(error_message)
+            raise ValueError("Cannot deprecate all API versions")
 
         self.DEPRECATED_API_VERSIONS = deprecated_apis
 
-    def set_allowed_hosts(self) -> None:
-        """
-        Set the allowed hosts.
-        """
+    def set_allowed_hosts(self):
         allowed_hosts = json.loads(os.getenv("ALLOWED_HOSTS", "[]"))
 
         for i in allowed_hosts:
             if not isinstance(i, str):
-                error_message = "Allowed hosts must be a list of strings"
-                raise TypeError(error_message)
+                raise ValueError("Allowed hosts must be a list of strings")
 
         for i in allowed_hosts:
             if not i.startswith("http://") and not i.startswith("https://"):
-                error_message = "Allowed hosts must start with http:// or https://"
-                raise ValueError(error_message)
+                raise ValueError("Allowed hosts must start with http:// or https://")
 
         self.ALLOWED_HOSTS = allowed_hosts
 
-    def set_logging_level(self) -> None:
-        """
-        Set the logging level.
-        """
+    def set_logging_level(self):
         env_logging_level = os.getenv("LOGGING_LEVEL")
 
         if env_logging_level is None:
@@ -149,10 +117,7 @@ class AppSettings:
             self.LOGGING_LEVEL = getattr(logging, env_logging_level.upper())
             return
 
-    def set_database_url(self) -> None:
-        """
-        Set the database URL.
-        """
+    def set_database_url(self):
         env_database_url = os.getenv("DATABASE_URL")
 
         if env_database_url is None:
@@ -160,10 +125,7 @@ class AppSettings:
 
         self.DATABASE_URL = env_database_url
 
-    def set_database_port(self) -> None:
-        """
-        Set the database port.
-        """
+    def set_database_port(self):
         env_database_port = os.getenv("DATABASE_PORT")
 
         if env_database_port is None:
@@ -172,13 +134,10 @@ class AppSettings:
         if env_database_port.isnumeric():
             self.DATABASE_PORT = int(env_database_port)
             return
-        error_message = "Database port must be a number"
-        raise ValueError(error_message)
+        else:
+            raise ValueError("Database port must be a number")
 
-    def set_database_password(self) -> None:
-        """
-        Set the database password.
-        """
+    def set_database_password(self):
         env_database_password = os.getenv("DATABASE_PASSWORD")
 
         if env_database_password is None:
@@ -186,16 +145,12 @@ class AppSettings:
 
         self.DATABASE_PASSWORD = env_database_password
 
-    def set_secret_key(self) -> None:
-        """
-        Set the secret key.
-        """
+    def set_secret_key(self):
         env_secret_key = os.getenv("SECRET_KEY")
 
         if env_secret_key is None:
-            error_message = (
-                "Secret key must be set. Generate one using 'openssl rand -hex 32'"
+            raise ValueError(
+                'Secret key must be set. Generate one using "openssl rand -hex 32"'
             )
-            raise ValueError(error_message)
 
         self.SECRET_KEY = env_secret_key
