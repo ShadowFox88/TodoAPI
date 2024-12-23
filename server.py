@@ -10,6 +10,7 @@ from main.core.settings import AppSettings
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.ext.asyncio.engine import AsyncEngine
 from sqlmodel import SQLModel
+from slowapi import Limiter, _rate_limit_exceeded_handler
 
 settings = AppSettings()
 
@@ -61,6 +62,12 @@ def create_app() -> CustomApp:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    app.state.limiter = Limiter(
+        key_func=lambda: "get_remote_address",
+        default_limits=["1 per day"],
+    )
+    app.add_exception_handler(429, _rate_limit_exceeded_handler)
 
     for i in settings.ALL_API_VERSIONS:
         if i not in settings.DEPRECATED_API_VERSIONS:
